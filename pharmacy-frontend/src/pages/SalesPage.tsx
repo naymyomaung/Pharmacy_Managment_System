@@ -1,20 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
-import type { ColumnDef } from '@tanstack/react-table';
-import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
 import { salesApi } from '../api/resources';
-import type { Sale, SaleItem } from '../api/types';
-import { useConversions, useDrugs, useSales, useUnits } from '../hooks/queries';
+import type { Drug, SaleItem } from '../api/types';
+import { useConversions, useDrugs, useUnits } from '../hooks/queries';
 import { useAuth } from '../store/auth';
 import { useSaleCart } from '../store/saleCart';
-import { Card, Spinner, Empty } from '../components/ui';
-import { DataTable } from '../components/DataTable';
+import { Card } from '../components/ui';
 import { Modal } from '../components/Modal';
 import { Field } from '../components/Field';
 import { toast, apiError } from '../lib/alert';
 
 export default function SalesPage() {
-  const { data, isLoading } = useSales();
   const drugs = useDrugs();
   const units = useUnits();
   const conversions = useConversions();
@@ -25,6 +22,8 @@ export default function SalesPage() {
   const [customer, setCustomer] = useState('General Customer');
   const [payment, setPayment] = useState('Cash');
   const [row, setRow] = useState({ drugId: 0, unitId: 0, quantity: 1, unitPrice: 0 });
+  const [drugPickerOpen, setDrugPickerOpen] = useState(false);
+  const [drugQuery, setDrugQuery] = useState('');
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ drugId: 0, unitId: 0, quantity: 1, unitPrice: 0 });
 
@@ -32,21 +31,6 @@ export default function SalesPage() {
   interface Receipt { saleId: number; customer: string; payment: string; date: string; cashier: string; discount: number; items: ReceiptItem[]; }
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const pendingReceipt = useRef<Omit<Receipt, 'saleId'> | null>(null);
-
-  // Bulk-fetch sale line details so history can show drugs / qty / units
-  const saleIds = useMemo(() => (data ?? []).map((s) => s.saleId), [data]);
-  const detailQueries = useQueries({
-    queries: saleIds.map((id) => ({
-      queryKey: ['sale', id],
-      queryFn: () => salesApi.get(id) as Promise<Sale>,
-      staleTime: 30_000,
-    })),
-  });
-  const detailsMap = useMemo(() => {
-    const m = new Map<number, Sale>();
-    detailQueries.forEach((q, i) => { if (q.data) m.set(saleIds[i], q.data as Sale); });
-    return m;
-  }, [detailQueries, saleIds]);
 
   const unitCode = (id: number) => units.data?.find((u) => u.unitId === id)?.unitCode ?? `#${id}`;
   const baseUnitOf = (drugId: number) => drugs.data?.find((d) => d.drugId === drugId)?.baseUnitId ?? 0;
@@ -70,6 +54,22 @@ export default function SalesPage() {
   };
 
   const selDrug = drugs.data?.find((x) => x.drugId === row.drugId);
+  // Searchable drug picker: results appear only while the user is typing
+  const drugResults = useMemo(() => {
+    const q = drugQuery.trim().toLowerCase();
+    if (!q) return [];
+    return (drugs.data ?? []).filter((d) =>
+      d.drugName.toLowerCase().includes(q) ||
+      (d.genericName ?? '').toLowerCase().includes(q) ||
+      (d.category ?? '').toLowerCase().includes(q),
+    );
+  }, [drugs.data, drugQuery]);
+  const pickDrug = (drugId: number) => {
+    const d = drugs.data?.find((x) => x.drugId === drugId);
+    setRow({ ...row, drugId, unitPrice: d?.sellingPrice ?? 0, unitId: d?.baseUnitId ?? row.unitId });
+    setDrugPickerOpen(false);
+    setDrugQuery('');
+  };
   const onUnitChange = (unitId: number) => {
     const d = drugs.data?.find((x) => x.drugId === row.drugId);
     const f = row.drugId ? factorFor(row.drugId, unitId) : null;
@@ -89,6 +89,46 @@ export default function SalesPage() {
     drugId: it.drugId, unitId: it.unitId, quantity: it.quantity, unitPrice: it.unitPrice,
   });
 
+  // Popup-style alert for stock problems, with a drug information card
+  const stockAlert = (msg: string, d?: Drug) => {
+    const info = d ? (
+      `<div style="text-align:left;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:13px">`
+      + `<p style="font-weight:700;font-size:14px;margin:0 0 4px">${escHtml(d.drugName)}</p>`
+      + `<p style="margin:2px 0;color:#475569">Generic: <b>${escHtml(d.genericName || '—')}</b> &nbsp; Category: <b>${escHtml(d.category || '—')}</b></p>`
+      + `<p style="margin:2px 0;color:#475569">Price: <b>${Number(d.sellingPrice).toFixed(0)} MMK</b> &nbsp; Stock: <b>${d.stockQuantity} ${escHtml(unitCode(d.baseUnitId))}</b></p>`
+      + (d.expiryDate ? `<p style="margin:2px 0;color:#475569">Expiry: <b>${new Date(d.expiryDate).toLocaleDateString()}</b></p>` : '')
+      + `</div>`
+    ) : '';
+    Swal.fire({
+      icon: 'warning',
+      title: 'Insufficient stock',
+      html: `${info}<p style="margin:0">${escHtml(msg)}</p>`,
+      confirmButtonColor: '#16a34a',
+    });
+  };
+
+  // +/- stepper for cart lines: validates against stock, pops a warning when over
+  const stepQty = (i: number, delta: number) => {
+    const it = cart.items[i];
+    if (!it) return;
+    const next = Number(it.quantity) + delta;
+    if (next < 1) { cart.remove(i); return; }
+    const d = drugs.data?.find((x) => x.drugId === it.drugId);
+    if (!d) return;
+    if (it.unitId !== d.baseUnitId) {
+      const f = factorFor(it.drugId, it.unitId);
+      if (f == null) return;
+      if (Math.floor(next * f) > d.stockQuantity) {
+        stockAlert(`Only ${d.stockQuantity} ${unitCode(d.baseUnitId)} of ${d.drugName} available — cannot raise to ${next} ${unitCode(it.unitId)} (= ${Math.floor(next * f)} ${unitCode(d.baseUnitId)}).`, d);
+        return;
+      }
+    } else if (next > d.stockQuantity) {
+      stockAlert(`Only ${d.stockQuantity} ${unitCode(d.baseUnitId)} of ${d.drugName} available.`, d);
+      return;
+    }
+    cart.update(i, { ...it, quantity: next });
+  };
+
   const addToCart = () => {
     if (!row.drugId || !row.unitId) return toast('Pick drug + unit', 'error');
     if (!row.quantity || Number(row.quantity) <= 0) return toast('Quantity must be > 0', 'error');
@@ -104,10 +144,12 @@ export default function SalesPage() {
       }
       const need = Math.floor(Number(row.quantity) * f);
       if (need > d.stockQuantity) {
-        return toast(`Insufficient stock: need ${need} ${unitCode(d.baseUnitId)} (= ${row.quantity} ${u?.unitCode ?? ''}), have ${d.stockQuantity}.`, 'error');
+        stockAlert(`Need ${need} ${unitCode(d.baseUnitId)} (= ${row.quantity} ${u?.unitCode ?? ''}) of ${d.drugName}, but only ${d.stockQuantity} available.`, d);
+        return;
       }
     } else if (Number(row.quantity) > d.stockQuantity) {
-      return toast(`Insufficient stock: have ${d.stockQuantity} ${unitCode(d.baseUnitId)}.`, 'error');
+      stockAlert(`Only ${d.stockQuantity} ${unitCode(d.baseUnitId)} of ${d.drugName} available.`, d);
+      return;
     }
     cart.add({ ...row, quantity: Number(row.quantity), unitPrice: Number(row.unitPrice), drugName: d?.drugName ?? `Drug #${row.drugId}`, unitCode: u?.unitCode ?? '' });
     setRow({ drugId: 0, unitId: 0, quantity: 1, unitPrice: 0 });
@@ -138,10 +180,13 @@ export default function SalesPage() {
       if (it.unitId !== d.baseUnitId) {
         const f = factorFor(it.drugId, it.unitId);
         if (f == null) return toast(`No conversion ${unitCode(it.unitId)} → ${unitCode(d.baseUnitId)} for ${d.drugName}.`, 'error');
-        if (Math.floor(Number(it.quantity) * f) > d.stockQuantity)
-          return toast(`Insufficient stock for ${d.drugName}: need ${Math.floor(Number(it.quantity) * f)} ${unitCode(d.baseUnitId)}, have ${d.stockQuantity}.`, 'error');
+        if (Math.floor(Number(it.quantity) * f) > d.stockQuantity) {
+          stockAlert(`Insufficient stock for ${d.drugName}: need ${Math.floor(Number(it.quantity) * f)} ${unitCode(d.baseUnitId)}, only ${d.stockQuantity} available.`, d);
+          return;
+        }
       } else if (Number(it.quantity) > d.stockQuantity) {
-        return toast(`Insufficient stock for ${d.drugName}: have ${d.stockQuantity}.`, 'error');
+        stockAlert(`Insufficient stock for ${d.drugName}: only ${d.stockQuantity} ${unitCode(d.baseUnitId)} available.`, d);
+        return;
       }
     }
     checkout.mutate({
@@ -228,89 +273,22 @@ export default function SalesPage() {
     if (editForm.unitId !== d.baseUnitId) {
       const f = factorFor(editForm.drugId, editForm.unitId);
       if (f == null) return toast(`No conversion ${u?.unitCode ?? editForm.unitId} → ${unitCode(d.baseUnitId)} for ${d.drugName}.`, 'error');
-      if (Math.floor(Number(editForm.quantity) * f) > d.stockQuantity)
-        return toast(`Insufficient stock: need ${Math.floor(Number(editForm.quantity) * f)} ${unitCode(d.baseUnitId)}, have ${d.stockQuantity}.`, 'error');
+      if (Math.floor(Number(editForm.quantity) * f) > d.stockQuantity) {
+        stockAlert(`Need ${Math.floor(Number(editForm.quantity) * f)} ${unitCode(d.baseUnitId)} of ${d.drugName}, but only ${d.stockQuantity} available.`, d);
+        return;
+      }
     } else if (Number(editForm.quantity) > d.stockQuantity) {
-      return toast(`Insufficient stock: have ${d.stockQuantity}.`, 'error');
+      stockAlert(`Only ${d.stockQuantity} ${unitCode(d.baseUnitId)} of ${d.drugName} available.`, d);
+      return;
     }
     cart.update(editIndex, { ...editForm, quantity: Number(editForm.quantity), unitPrice: Number(editForm.unitPrice), drugName: d.drugName, unitCode: u?.unitCode ?? '' });
     setEditIndex(null);
     toast('Cart line updated');
   };
 
-  const drugNameOf = (drugId: number) => drugs.data?.find((d) => d.drugId === drugId)?.drugName ?? `#${drugId}`;
-  const drugsOf = (id: number) => {
-    const items = detailsMap.get(id)?.items ?? [];
-    if (!items.length) return '—';
-    return [...new Set(items.map((it) => drugNameOf(it.drugId)))].join(', ');
-  };
-  const linesOf = (id: number) => detailsMap.get(id)?.items?.length ?? 0;
-  const qtyOf = (id: number) => (detailsMap.get(id)?.items ?? []).reduce((s, it) => s + Number(it.quantity || 0), 0);
-  const unitsOf = (id: number) => {
-    const items = detailsMap.get(id)?.items ?? [];
-    if (!items.length) return '—';
-    return [...new Set(items.map((it) => unitCode(it.unitId)))].join(', ');
-  };
-
-  const viewDetail = async (id: number) => {
-    try {
-      const s = (detailsMap.get(id) ?? await salesApi.get(id)) as Sale;
-      const esc = (v: unknown) => String(v ?? '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const items = s.items ?? [];
-      const totalQty = items.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
-      const rows = items.map((it, idx) => {
-        const subtotal = (Number(it.quantity) * Number(it.unitPrice)).toFixed(0);
-        return `<tr style="border-bottom:1px solid #eee">
-          <td style="padding:6px 4px;color:#94a3b8">${idx + 1}</td>
-          <td style="padding:6px 4px;font-weight:600">${esc(drugNameOf(it.drugId))}</td>
-          <td style="padding:6px 4px">${esc(unitCode(it.unitId))}</td>
-          <td style="padding:6px 4px;text-align:right">${it.quantity}</td>
-          <td style="padding:6px 4px;text-align:right">${Number(it.unitPrice).toFixed(0)}</td>
-          <td style="padding:6px 4px;text-align:right;font-weight:600">${subtotal}</td></tr>`;
-      }).join('') || `<tr><td colspan="6" style="padding:12px;text-align:center;color:#94a3b8">No items</td></tr>`;
-      Swal.fire({
-        title: `Sale #${id}`,
-        html: `<div style="text-align:left;font-size:14px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px">
-            <p><b>Customer:</b> ${esc(s.customerName)}</p>
-            <p><b>Date:</b> ${new Date(s.saleDate).toLocaleString()}</p>
-            <p><b>Payment:</b> ${esc(s.paymentMethod)}</p>
-            <p><b>Lines:</b> ${items.length} &nbsp; <b>Total qty:</b> ${totalQty}</p>
-            <p><b>Total:</b> ${s.totalAmount} MMK &nbsp; <b>Discount:</b> ${s.discount} MMK</p>
-            <p><b>Net:</b> ${s.netAmount} MMK</p>
-          </div>
-          <hr style="margin:8px 0"/>
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:#f8fafc;text-align:left">
-              <th style="padding:6px 4px">#</th><th style="padding:6px 4px">Drug</th>
-              <th style="padding:6px 4px">Unit</th><th style="padding:6px 4px;text-align:right">Qty</th>
-              <th style="padding:6px 4px;text-align:right">Price</th><th style="padding:6px 4px;text-align:right">Subtotal (MMK)</th></tr></thead>
-            <tbody>${rows}</tbody>
-            <tfoot><tr style="border-top:2px solid #e2e8f0;font-weight:700">
-              <td colspan="3" style="padding:6px 4px">Total (${items.length} lines)</td>
-              <td style="padding:6px 4px;text-align:right">${totalQty}</td>
-              <td></td><td style="padding:6px 4px;text-align:right">${s.netAmount} MMK</td></tr></tfoot></table></div>`,
-        width: 820,
-      });
-    } catch (e) { toast(String(apiError(e)), 'error'); }
-  };
-
-  const cols: ColumnDef<Sale>[] = [
-    { header: 'ID', accessorKey: 'saleId' },
-    { header: 'Customer', accessorKey: 'customerName' },
-    { id: 'drugs', header: 'Drugs', cell: ({ row }) => <span className="text-xs">{drugsOf(row.original.saleId)}</span> },
-    { id: 'lines', header: 'Lines', cell: ({ row }) => linesOf(row.original.saleId) || '—' },
-    { id: 'qty', header: 'Qty', cell: ({ row }) => qtyOf(row.original.saleId) || '—' },
-    { id: 'units', header: 'Units', cell: ({ row }) => <span className="text-xs">{unitsOf(row.original.saleId)}</span> },
-    { id: 'net', header: 'Net', cell: ({ row }) => `${row.original.netAmount} MMK` },
-    { header: 'Pay', accessorKey: 'paymentMethod' },
-    { id: 'date', header: 'Date', cell: ({ row }) => new Date(row.original.saleDate).toLocaleString() },
-    { id: 'view', header: 'Details', cell: ({ row }) => <button className="btn-ghost px-2 py-1 text-xs" type="button" onClick={() => viewDetail(row.original.saleId)}>View</button> },
-  ];
-
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <Card title="POS — New sale (stock OUT)">
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <Card title="Current — pick items (stock OUT)">
         <div className="grid gap-2">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Field label="Customer name"><input className="input" value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="e.g. General Customer" /></Field>
@@ -318,55 +296,103 @@ export default function SalesPage() {
               <option>Cash</option><option>Card</option><option>Mobile</option>
             </select></Field>
           </div>
-          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-2 sm:grid-cols-4">
-            <Field label="Drug *"><select className="input" value={row.drugId} onChange={(e) => {
-              const d = drugs.data?.find((x) => x.drugId === Number(e.target.value));
-              setRow({ ...row, drugId: Number(e.target.value), unitPrice: d?.sellingPrice ?? 0, unitId: d?.baseUnitId ?? row.unitId });
-            }}>
-              <option value={0}>Select drug</option>{(drugs.data ?? []).map((d) => <option key={d.drugId} value={d.drugId}>{d.drugName} ({d.stockQuantity})</option>)}
-            </select></Field>
+          <div className="grid gap-2 rounded-xl bg-slate-50 p-2">
+            <div className="block text-sm">
+              <span className="mb-1 block font-semibold text-clinic-ink">Drug *</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDrugPickerOpen(true)}
+                  className={`input flex-1 text-left ${row.drugId ? '' : 'text-slate-400'}`}
+                >
+                  {selDrug ? selDrug.drugName : 'Click to search & select drug…'}
+                </button>
+                {row.drugId > 0 && (
+                  <button
+                    type="button"
+                    className="btn-ghost shrink-0 px-3"
+                    onClick={() => setRow({ ...row, drugId: 0 })}
+                    title="Clear selection"
+                  >✕</button>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
             <Field label="Unit *"><select className="input" value={row.unitId} onChange={(e) => onUnitChange(Number(e.target.value))}>
               <option value={0}>Select unit</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
             </select></Field>
             <Field label="Quantity *"><input type="number" min={1} className="input" value={row.quantity} onChange={(e) => setRow({ ...row, quantity: Number(e.target.value) })} /></Field>
             <Field label="Unit price (MMK) *"><input type="number" min={0} className="input" value={row.unitPrice} onChange={(e) => setRow({ ...row, unitPrice: Number(e.target.value) })} /></Field>
+            </div>
           </div>
           {selDrug && row.unitId > 0 && selFactor != null && row.unitId !== selDrug.baseUnitId && (
             <p className="-mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-800">
               Price auto-converted: {Number(selDrug.sellingPrice).toFixed(0)} {selBaseCode} × {selFactor} = <b>{Math.round(Number(selDrug.sellingPrice) * selFactor)} {unitCode(row.unitId)}</b> (editable)
             </p>
           )}
-          <button className="btn-ghost" type="button" onClick={addToCart}>+ Add to cart</button>
+          <button className="btn-ghost" type="button" onClick={addToCart}>+ Add to cart →</button>
           {row.drugId > 0 && row.unitId > 0 && (
             selFactor == null ? (
-              <p className="rounded-lg bg-red-50 px-2 py-1 text-xs text-red-700">
-                No conversion {unitCode(row.unitId)} → {selBaseCode || 'base'} for {selDrug?.drugName ?? `#${row.drugId}`}. Backend would deduct 1:1 (wrong). Add it in Conversions first.
-              </p>
+              <div className="rounded-lg bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-700">
+                <p className="font-semibold">No conversion {unitCode(row.unitId)} → {selBaseCode || 'base'}</p>
+                <p>for {selDrug?.drugName ?? `#${row.drugId}`}. Backend would deduct 1:1 (wrong). Add it in Conversions first.</p>
+              </div>
             ) : row.unitId === (selDrug?.baseUnitId ?? row.unitId) ? (
-              <p className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-600">
-                {row.quantity} {unitCode(row.unitId)} (base unit) • Stock: {selStock} {selBaseCode}
-                {selBaseQty != null && selBaseQty > selStock ? <b className="text-red-600"> — insufficient!</b> : null}
-              </p>
+              <div className="rounded-lg bg-slate-100 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                <p>{row.quantity} {unitCode(row.unitId)} <span className="text-slate-400">(base unit)</span></p>
+                <p>Stock: <b>{selStock} {selBaseCode}</b>
+                  {selBaseQty != null && selBaseQty > selStock ? <b className="text-red-600"> — insufficient!</b> : null}
+                </p>
+              </div>
             ) : (
-              <p className="rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-800">
-                {row.quantity} {unitCode(row.unitId)} × {selFactor} = <b>{selBaseQty} {selBaseCode}</b> will be deducted (FEFO) • Stock: {selStock} {selBaseCode}
-                {selBaseQty != null && selBaseQty > selStock ? <b className="text-red-600"> — insufficient!</b> : null}
-              </p>
+              <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-800">
+                <p>{row.quantity} {unitCode(row.unitId)} × {selFactor} = <b>{selBaseQty} {selBaseCode}</b></p>
+                <p>will be deducted (FEFO)</p>
+                <p>Stock: <b>{selStock} {selBaseCode}</b>
+                  {selBaseQty != null && selBaseQty > selStock ? <b className="text-red-600"> — insufficient!</b> : null}
+                </p>
+              </div>
             )
           )}
+        </div>
+      </Card>
+
+      <Card title={`Cart (${cart.items.length})`}>
+        <div className="grid gap-2">
+          <div className="grid max-h-[380px] gap-2 overflow-y-auto pr-1">
+          {!cart.items.length && <p className="rounded-lg bg-slate-50 px-2 py-3 text-center text-xs text-slate-500">Cart is empty — pick items on the left and press “Add to cart”.</p>}
           {cart.items.map((it, i) => {
             const bq = baseQtyOf(it.drugId, it.unitId, it.quantity);
             const base = baseUnitOf(it.drugId);
             const showConv = base && it.unitId !== base && bq != null;
+            const lineTotal = (Number(it.quantity) * Number(it.unitPrice)).toFixed(0);
             return (
-              <div key={i} className={`flex justify-between rounded-lg border px-2 py-1 text-sm ${editIndex === i ? 'border-blue-400 bg-blue-50' : ''}`}>
-                <span>{it.drugName ?? drugs.data?.find((d) => d.drugId === it.drugId)?.drugName ?? `Drug #${it.drugId}`} × {it.quantity}{it.unitCode ? ` ${it.unitCode}` : ''}{showConv ? ` (= ${bq} ${unitCode(base)})` : ''} @ {it.unitPrice} MMK</span>
-                <span className="flex shrink-0 gap-2">
-                  <button className="text-blue-600 hover:underline" type="button" onClick={() => startEdit(i)}>edit</button>
-                  <button className="text-red-600 hover:underline" type="button" onClick={() => cart.remove(i)}>remove</button>
-                </span>
+              <div key={i} className={`rounded-xl border bg-white px-3 py-2 shadow-sm ${editIndex === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                    {it.drugName ?? drugs.data?.find((d) => d.drugId === it.drugId)?.drugName ?? `Drug #${it.drugId}`}
+                  </p>
+                  <p className="shrink-0 text-sm font-bold text-emerald-700">{lineTotal} MMK</p>
+                </div>
+                {showConv ? (
+                  <span className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                    = {bq} {unitCode(base)}
+                  </span>
+                ) : null}
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-base font-bold text-slate-600 hover:bg-slate-100" type="button" onClick={() => stepQty(i, -1)} title="Decrease quantity">−</button>
+                    <span className="min-w-16 rounded-lg bg-emerald-50 px-2 py-1 text-center text-sm font-bold text-emerald-800">{it.quantity} {it.unitCode}</span>
+                    <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-base font-bold text-slate-600 hover:bg-slate-100" type="button" onClick={() => stepQty(i, 1)} title="Increase quantity">+</button>
+                  </div>
+                  <span className="flex shrink-0 gap-2 text-xs">
+                    <button className="text-blue-600 hover:underline" type="button" onClick={() => startEdit(i)}>edit</button>
+                    <button className="text-red-600 hover:underline" type="button" onClick={() => cart.remove(i)}>remove</button>
+                  </span>
+                </div>
               </div>);
           })}
+          </div>
           <div className="flex items-center justify-between text-sm">
             <Field label="Discount (MMK)"><input type="number" min={0} className="input w-28" value={cart.discount} onChange={(e) => cart.setDiscount(Number(e.target.value))} /></Field>
             <b>Total: {(cart.total() - cart.discount).toFixed(0)} MMK</b>
@@ -374,9 +400,46 @@ export default function SalesPage() {
           <button className="btn-primary" type="button" disabled={!cart.items.length || checkout.isPending} onClick={handleCheckout}>{checkout.isPending ? 'Processing…' : 'Checkout'}</button>
         </div>
       </Card>
-      <Card title="Sales history">
-        {isLoading ? <Spinner /> : !data?.length ? <Empty /> : <DataTable columns={cols} data={data} />}
-      </Card>
+
+      {drugPickerOpen && (
+        <Modal title="Select drug" size="lg" onClose={() => { setDrugPickerOpen(false); setDrugQuery(''); }}>
+          <div className="grid gap-3">
+            <input
+              autoFocus
+              className="input"
+              value={drugQuery}
+              onChange={(e) => setDrugQuery(e.target.value)}
+              placeholder="🔍 Search by drug name, generic name, or category…"
+            />
+            <div className="grid max-h-[50vh] gap-2 overflow-y-auto pr-1">
+              {!drugQuery.trim() && <p className="rounded-lg bg-slate-50 px-2 py-4 text-center text-xs text-slate-500">Type a drug name, generic name, or category above to search…</p>}
+              {!!drugQuery.trim() && !drugResults.length && <p className="rounded-lg bg-slate-50 px-2 py-4 text-center text-xs text-slate-500">No drugs match “{drugQuery}”.</p>}
+              {drugResults.map((d) => (
+                <button
+                  key={d.drugId}
+                  type="button"
+                  onClick={() => pickDrug(d.drugId)}
+                  className={`rounded-xl border px-3 py-2 text-left shadow-sm transition hover:border-emerald-400 hover:bg-emerald-50/50 ${d.drugId === row.drugId ? 'border-emerald-400 bg-emerald-50/60' : 'border-slate-200 bg-white'}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-sm font-semibold text-slate-800">{d.drugName}</p>
+                    <p className="shrink-0 text-sm font-bold text-emerald-700">{Number(d.sellingPrice).toFixed(0)} MMK</p>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                    {d.genericName ? <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">{d.genericName}</span> : null}
+                    {d.category ? <span className="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700">{d.category}</span> : null}
+                    <span className={`rounded-full px-2 py-0.5 font-medium ${d.stockQuantity > 0 ? 'bg-slate-100 text-slate-600' : 'bg-red-50 text-red-600'}`}>
+                      Stock: {d.stockQuantity} {unitCode(d.baseUnitId)}
+                    </span>
+                    {d.expiryDate ? <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">Exp: {new Date(d.expiryDate).toLocaleDateString()}</span> : null}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {!!drugQuery.trim() && <p className="text-right text-xs text-slate-400">{drugResults.length} drug(s)</p>}
+          </div>
+        </Modal>
+      )}
 
       {receipt && (
         <Modal title={`Sale #${receipt.saleId} completed`} onClose={() => setReceipt(null)}>

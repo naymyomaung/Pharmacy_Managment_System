@@ -11,7 +11,8 @@ const groups: { title: string; items: NavItem[] }[] = [
     title: 'Operations',
     items: [
       { to: '/', label: 'Dashboard', icon: '🏥', end: true },
-      { to: '/sales', label: 'Sales (POS)', icon: '🧾' },
+      { to: '/sales', label: 'Sales (POS)', icon: '🧾', end: true },
+      { to: '/sales/history', label: 'Sales History', icon: '🧾' },
       { to: '/purchases', label: 'Purchases', icon: '📦' },
     ],
   },
@@ -66,9 +67,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const showSidebar = isDesktop || sidebarOpen;
   const initial = (user?.fullName ?? user?.username ?? '?').trim().charAt(0).toUpperCase();
 
-  const pageTitle = [...groups.flatMap((g) => g.items), ...reportLinks].find(
-    (l) => l.to !== '/' && loc.pathname.startsWith(l.to),
-  )?.label ?? 'Dashboard';
+  const pageTitle = [...groups.flatMap((g) => g.items), ...reportLinks]
+    .filter((l) => l.to !== '/' && loc.pathname.startsWith(l.to))
+    .sort((a, b) => b.to.length - a.to.length)[0]?.label ?? 'Dashboard';
 
   return (
     <div className="min-h-screen">

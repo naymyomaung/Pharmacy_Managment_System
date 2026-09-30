@@ -11,6 +11,7 @@ import ConversionsPage from '../pages/ConversionsPage';
 import SuppliersPage from '../pages/SuppliersPage';
 import PurchasesPage from '../pages/PurchasesPage';
 import SalesPage from '../pages/SalesPage';
+import SalesHistoryPage from '../pages/SalesHistoryPage';
 import SalesReportPage from '../pages/reports/SalesReportPage';
 import PurchasesReportPage from '../pages/reports/PurchasesReportPage';
 import ClosingReportPage from '../pages/reports/ClosingReportPage';
@@ -33,6 +34,7 @@ export default function Router() {
         <Route path="/suppliers" element={<Guard><SuppliersPage /></Guard>} />
         <Route path="/purchases" element={<Guard><PurchasesPage /></Guard>} />
         <Route path="/sales" element={<Guard><SalesPage /></Guard>} />
+        <Route path="/sales/history" element={<Guard><SalesHistoryPage /></Guard>} />
         <Route path="/reports/sales" element={<Guard><SalesReportPage /></Guard>} />
         <Route path="/reports/purchases" element={<Guard><PurchasesReportPage /></Guard>} />
         <Route path="/reports/closing" element={<Guard><ClosingReportPage /></Guard>} />
