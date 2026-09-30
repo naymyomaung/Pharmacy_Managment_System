@@ -8,6 +8,7 @@ import { Card, Spinner, Empty, Badge } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Field } from '../components/Field';
+import { NumInput } from '../components/NumInput';
 import { toast, confirmDelete, apiError } from '../lib/alert';
 
 export default function DrugsPage() {
@@ -61,7 +62,7 @@ export default function DrugsPage() {
       {open && target && (
         <Modal title={`Update ${target.drugName}`} onClose={() => setOpen(false)}>
           <div className="grid gap-3">
-            <Field label="Sell price (MMK) *"><input type="number" min={0} className="input" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: Number(e.target.value) })} /></Field>
+            <Field label="Sell price (MMK) *"><NumInput min={0} value={form.sellingPrice} onChange={(n) => setForm({ ...form, sellingPrice: n })} /></Field>
             <Field label="Expiry date"><input type="date" className="input" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} /></Field>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>

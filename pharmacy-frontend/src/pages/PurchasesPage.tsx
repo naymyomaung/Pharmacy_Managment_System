@@ -9,6 +9,7 @@ import { useAuth } from '../store/auth';
 import { Card, Spinner, Empty } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { NumInput } from '../components/NumInput';
 import { Field } from '../components/Field';
 import { QuickAddDrug } from '../components/QuickAddDrug';
 import { toast, apiError } from '../lib/alert';
@@ -310,8 +311,8 @@ export default function PurchasesPage() {
                 <Field label="Unit *"><select className="input" value={row.unitId} onChange={(e) => setRow({ ...row, unitId: Number(e.target.value) })}>
                   <option value={0}>Select unit</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
                 </select></Field>
-                <Field label="Quantity *"><input type="number" min={1} className="input" value={row.quantity} onChange={(e) => setRow({ ...row, quantity: Number(e.target.value) })} /></Field>
-                <Field label="Buying price (MMK) *"><input type="number" min={0} className="input" placeholder="Cost per unit in MMK" value={row.unitPrice} onChange={(e) => setRow({ ...row, unitPrice: Number(e.target.value) })} /></Field>
+                <Field label="Quantity *"><NumInput min={1} value={row.quantity} onChange={(n) => setRow({ ...row, quantity: n })} /></Field>
+                <Field label="Buying price (MMK) *"><NumInput min={0} placeholder="Cost per unit in MMK" value={row.unitPrice} onChange={(n) => setRow({ ...row, unitPrice: n })} /></Field>
                 <Field label="Expiry date *"><input type="date" className="input" value={row.expiryDate ?? ''} onChange={(e) => setRow({ ...row, expiryDate: e.target.value })} /></Field>
               </div>
               <button className="btn-ghost mt-2 w-full" type="button" onClick={addLine}>+ Add line →</button>
@@ -413,8 +414,8 @@ export default function PurchasesPage() {
               <Field label="Unit *"><select className="input" value={editForm.unitId} onChange={(e) => setEditForm({ ...editForm, unitId: Number(e.target.value) })}>
                 <option value={0}>Select unit</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
               </select></Field>
-              <Field label="Quantity *"><input type="number" min={1} className="input" value={editForm.quantity} onChange={(e) => setEditForm({ ...editForm, quantity: Number(e.target.value) })} /></Field>
-              <Field label="Buying price (MMK) *"><input type="number" min={0} className="input" value={editForm.unitPrice} onChange={(e) => setEditForm({ ...editForm, unitPrice: Number(e.target.value) })} /></Field>
+              <Field label="Quantity *"><NumInput min={1} value={editForm.quantity} onChange={(n) => setEditForm({ ...editForm, quantity: n })} /></Field>
+              <Field label="Buying price (MMK) *"><NumInput min={0} value={editForm.unitPrice} onChange={(n) => setEditForm({ ...editForm, unitPrice: n })} /></Field>
             </div>
             <Field label="Expiry date *"><input type="date" className="input" value={editForm.expiryDate ?? ''} onChange={(e) => setEditForm({ ...editForm, expiryDate: e.target.value })} /></Field>
             <p className="text-right text-sm font-bold">Line total: {(Number(editForm.quantity) * Number(editForm.unitPrice) || 0).toFixed(0)} MMK</p>

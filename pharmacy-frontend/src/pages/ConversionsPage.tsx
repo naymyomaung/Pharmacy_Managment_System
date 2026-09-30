@@ -8,6 +8,7 @@ import { Card, Spinner, Empty } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Field } from '../components/Field';
+import { NumInput } from '../components/NumInput';
 import { toast, confirmDelete, apiError } from '../lib/alert';
 
 const empty = { drugId: 0, fromUnitId: 0, toUnitId: 0, conversionFactor: 1 };
@@ -62,7 +63,7 @@ export default function ConversionsPage() {
                 <option value={0}>To</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
               </select></Field>
             </div>
-            <Field label="Conversion factor *" hint="How many 'to' units are in 1 'from' unit"><input type="number" min={0} step="any" className="input" value={form.conversionFactor} onChange={(e) => setForm({ ...form, conversionFactor: Number(e.target.value) })} /></Field>
+            <Field label="Conversion factor *" hint="How many 'to' units are in 1 'from' unit"><NumInput min={0} step="any" value={form.conversionFactor} onChange={(n) => setForm({ ...form, conversionFactor: n })} /></Field>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
               <button className="btn-primary" onClick={() => save.mutate()}>Create</button>

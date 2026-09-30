@@ -8,8 +8,11 @@ import { useAuth } from '../store/auth';
 import { useSaleCart } from '../store/saleCart';
 import { Card } from '../components/ui';
 import { Modal } from '../components/Modal';
+import { NumInput } from '../components/NumInput';
 import { Field } from '../components/Field';
 import { toast, apiError } from '../lib/alert';
+import { SlipPrint } from '../components/SlipPrint';
+import type { Receipt } from '../components/SlipPrint';
 
 export default function SalesPage() {
   const drugs = useDrugs();
@@ -27,8 +30,6 @@ export default function SalesPage() {
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ drugId: 0, unitId: 0, quantity: 1, unitPrice: 0 });
 
-  interface ReceiptItem { name: string; qty: number; unit: string; price: number; }
-  interface Receipt { saleId: number; customer: string; payment: string; date: string; cashier: string; discount: number; items: ReceiptItem[]; }
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const pendingReceipt = useRef<Omit<Receipt, 'saleId'> | null>(null);
 
@@ -88,6 +89,8 @@ export default function SalesPage() {
   const strip = (it: SaleItem): SaleItem => ({
     drugId: it.drugId, unitId: it.unitId, quantity: it.quantity, unitPrice: it.unitPrice,
   });
+
+  const escHtml = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // Popup-style alert for stock problems, with a drug information card
   const stockAlert = (msg: string, d?: Drug) => {
@@ -207,45 +210,6 @@ export default function SalesPage() {
     };
   };
 
-  const escHtml = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  // Thermal slip print (80mm). Opens a print-sized window so the OS print
-  // dialog defaults to the receipt width; user picks the thermal printer.
-  const printReceipt = (r: Receipt) => {
-    const total = r.items.reduce((s, it) => s + it.qty * it.price, 0);
-    const net = total - Number(r.discount || 0);
-    const lines = r.items.map((it) => {
-      const amt = (it.qty * it.price).toFixed(0);
-      return `<div class="item"><div class="iname">${escHtml(it.name)}</div>`
-        + `<div class="irow"><span>${it.qty} ${escHtml(it.unit)} x ${Number(it.price).toFixed(0)}</span><span>${amt}</span></div></div>`;
-    }).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Sale #${r.saleId}</title><style>`
-      + `@page{size:80mm auto;margin:0}*{box-sizing:border-box}`
-      + `body{width:80mm;margin:0;padding:3mm 3mm 5mm;font-family:'Courier New',monospace;font-size:12px;color:#000}`
-      + `.c{text-align:center}.r{display:flex;justify-content:space-between}.b{font-weight:bold}`
-      + `.shop{font-size:15px;font-weight:bold}.sep{border-top:1px dashed #000;margin:6px 0}`
-      + `.item{margin:3px 0}.iname{font-weight:bold;word-break:break-word}.irow{display:flex;justify-content:space-between}`
-      + `.tot{margin-top:2px}.foot{margin-top:8px;text-align:center;font-size:11px}`
-      + `</style></head><body>`
-      + `<div class="c shop">PHARMACY</div><div class="c">Sales Receipt (80mm)</div><div class="sep"></div>`
-      + `<div class="r"><span>Receipt:</span><span class="b">#${r.saleId}</span></div>`
-      + `<div class="r"><span>Date:</span><span>${escHtml(r.date)}</span></div>`
-      + `<div class="r"><span>Cashier:</span><span>${escHtml(r.cashier)}</span></div>`
-      + `<div class="r"><span>Customer:</span><span>${escHtml(r.customer)}</span></div>`
-      + `<div class="r"><span>Payment:</span><span>${escHtml(r.payment)}</span></div>`
-      + `<div class="sep"></div>${lines}<div class="sep"></div>`
-      + `<div class="r tot"><span>Total:</span><span>${total.toFixed(0)} MMK</span></div>`
-      + `<div class="r"><span>Discount:</span><span>${Number(r.discount || 0).toFixed(0)} MMK</span></div>`
-      + `<div class="r b"><span>Net:</span><span>${net.toFixed(0)} MMK</span></div>`
-      + `<div class="foot">Thank you! / Goods sold are non-returnable</div>`
-      + `<script>window.onload=function(){setTimeout(function(){window.print()},200)}<\/script>`
-      + `</body></html>`;
-    const w = window.open('', '_blank', 'width=320,height=600');
-    if (!w) return toast('Popup blocked — allow popups to print', 'error');
-    w.document.write(html);
-    w.document.close();
-  };
-
   const startEdit = (i: number) => {
     const it = cart.items[i];
     if (!it) return;
@@ -321,8 +285,8 @@ export default function SalesPage() {
             <Field label="Unit *"><select className="input" value={row.unitId} onChange={(e) => onUnitChange(Number(e.target.value))}>
               <option value={0}>Select unit</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
             </select></Field>
-            <Field label="Quantity *"><input type="number" min={1} className="input" value={row.quantity} onChange={(e) => setRow({ ...row, quantity: Number(e.target.value) })} /></Field>
-            <Field label="Unit price (MMK) *"><input type="number" min={0} className="input" value={row.unitPrice} onChange={(e) => setRow({ ...row, unitPrice: Number(e.target.value) })} /></Field>
+            <Field label="Quantity *"><NumInput min={1} value={row.quantity} onChange={(n) => setRow({ ...row, quantity: n })} /></Field>
+            <Field label="Unit price (MMK) *"><NumInput min={0} value={row.unitPrice} onChange={(n) => setRow({ ...row, unitPrice: n })} /></Field>
             </div>
           </div>
           {selDrug && row.unitId > 0 && selFactor != null && row.unitId !== selDrug.baseUnitId && (
@@ -394,7 +358,7 @@ export default function SalesPage() {
           })}
           </div>
           <div className="flex items-center justify-between text-sm">
-            <Field label="Discount (MMK)"><input type="number" min={0} className="input w-28" value={cart.discount} onChange={(e) => cart.setDiscount(Number(e.target.value))} /></Field>
+            <Field label="Discount (MMK)"><NumInput min={0} className="input w-28" value={cart.discount} onChange={(n) => cart.setDiscount(n)} /></Field>
             <b>Total: {(cart.total() - cart.discount).toFixed(0)} MMK</b>
           </div>
           <button className="btn-primary" type="button" disabled={!cart.items.length || checkout.isPending} onClick={handleCheckout}>{checkout.isPending ? 'Processing…' : 'Checkout'}</button>
@@ -469,7 +433,7 @@ export default function SalesPage() {
             </div>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost" type="button" onClick={() => setReceipt(null)}>Close</button>
-              <button className="btn-primary" type="button" onClick={() => printReceipt(receipt)}>🖨 Print 80mm slip</button>
+              <button className="btn-primary" type="button" onClick={() => window.print()}>🖨 Print slip</button>
             </div>
           </div>
         </Modal>
@@ -488,8 +452,8 @@ export default function SalesPage() {
               <Field label="Unit *"><select className="input" value={editForm.unitId} onChange={(e) => pickEditUnit(Number(e.target.value))}>
                 <option value={0}>Select unit</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
               </select></Field>
-              <Field label="Quantity *"><input type="number" min={1} className="input" value={editForm.quantity} onChange={(e) => setEditForm({ ...editForm, quantity: Number(e.target.value) })} /></Field>
-              <Field label="Unit price (MMK) *"><input type="number" min={0} className="input" value={editForm.unitPrice} onChange={(e) => setEditForm({ ...editForm, unitPrice: Number(e.target.value) })} /></Field>
+              <Field label="Quantity *"><NumInput min={1} value={editForm.quantity} onChange={(n) => setEditForm({ ...editForm, quantity: n })} /></Field>
+              <Field label="Unit price (MMK) *"><NumInput min={0} value={editForm.unitPrice} onChange={(n) => setEditForm({ ...editForm, unitPrice: n })} /></Field>
             </div>
             <p className="text-right text-sm font-bold">Line total: {(Number(editForm.quantity) * Number(editForm.unitPrice) || 0).toFixed(0)} MMK</p>
             <div className="flex justify-end gap-2">
@@ -499,6 +463,9 @@ export default function SalesPage() {
           </div>
         </Modal>
       )}
+
+      {/* Hidden 80mm slip — printed in-page via browser print, no new tab */}
+      <SlipPrint receipt={receipt} />
     </div>
   );
 }

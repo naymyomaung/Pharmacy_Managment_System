@@ -1,18 +1,22 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useQueries } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
 import { salesApi } from '../api/resources';
 import type { Sale } from '../api/types';
-import { useDrugs, useSales, useUnits } from '../hooks/queries';
+import { useDrugs, useSales, useUnits, useUsers } from '../hooks/queries';
 import { Card, Spinner, Empty } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { toast, apiError } from '../lib/alert';
+import { SlipPrint } from '../components/SlipPrint';
+import type { Receipt } from '../components/SlipPrint';
 
 export default function SalesHistoryPage() {
   const { data, isLoading } = useSales();
   const drugs = useDrugs();
   const units = useUnits();
+  const users = useUsers();
+  const [slip, setSlip] = useState<Receipt | null>(null);
 
   // Bulk-fetch sale line details so history can show drugs / qty / units
   const saleIds = useMemo(() => (data ?? []).map((s) => s.saleId), [data]);
@@ -87,6 +91,29 @@ export default function SalesHistoryPage() {
     } catch (e) { toast(String(apiError(e)), 'error'); }
   };
 
+  // Reprint the 80mm slip for a past sale (in-page browser print, no new tab)
+  const printSlip = async (id: number) => {
+    try {
+      const s = (detailsMap.get(id) ?? await salesApi.get(id)) as Sale;
+      const cashier = users.data?.find((u) => u.userId === s.userId)?.username ?? 'cashier';
+      setSlip({
+        saleId: s.saleId,
+        customer: s.customerName ?? 'General Customer',
+        payment: s.paymentMethod ?? 'Cash',
+        date: new Date(s.saleDate).toLocaleString(),
+        cashier,
+        discount: Number(s.discount || 0),
+        items: (s.items ?? []).map((it) => ({
+          name: drugNameOf(it.drugId),
+          qty: Number(it.quantity),
+          unit: unitCode(it.unitId),
+          price: Number(it.unitPrice),
+        })),
+      });
+      setTimeout(() => window.print(), 150);
+    } catch (e) { toast(String(apiError(e)), 'error'); }
+  };
+
   const cols: ColumnDef<Sale>[] = [
     { header: 'ID', accessorKey: 'saleId' },
     { header: 'Customer', accessorKey: 'customerName' },
@@ -97,12 +124,21 @@ export default function SalesHistoryPage() {
     { id: 'net', header: 'Net', cell: ({ row }) => `${row.original.netAmount} MMK` },
     { header: 'Pay', accessorKey: 'paymentMethod' },
     { id: 'date', header: 'Date', cell: ({ row }) => new Date(row.original.saleDate).toLocaleString() },
-    { id: 'view', header: 'Details', cell: ({ row }) => <button className="btn-ghost px-2 py-1 text-xs" type="button" onClick={() => viewDetail(row.original.saleId)}>View</button> },
+    { id: 'view', header: 'Details', cell: ({ row }) => (
+      <span className="flex gap-1">
+        <button className="btn-ghost px-2 py-1 text-xs" type="button" onClick={() => viewDetail(row.original.saleId)}>View</button>
+        <button className="btn-ghost px-2 py-1 text-xs" type="button" title="Print 80mm slip" onClick={() => printSlip(row.original.saleId)}>🖨 Slip</button>
+      </span>
+    ) },
   ];
 
   return (
-    <Card title="Sales history">
-      {isLoading ? <Spinner /> : !data?.length ? <Empty /> : <DataTable columns={cols} data={data} />}
-    </Card>
+    <>
+      <Card title="Sales history">
+        {isLoading ? <Spinner /> : !data?.length ? <Empty /> : <DataTable columns={cols} data={data} />}
+      </Card>
+      {/* Hidden 80mm slip — printed in-page via browser print, no new tab */}
+      <SlipPrint receipt={slip} />
+    </>
   );
 }

@@ -4,6 +4,7 @@ import { drugsApi } from '../api/resources';
 import { useUnits } from '../hooks/queries';
 import { Modal } from './Modal';
 import { Field } from './Field';
+import { NumInput } from './NumInput';
 import { toast, apiError } from '../lib/alert';
 
 /** Popup to create a drug that doesn't exist yet. Returns the new drug's id + defaults. */
@@ -42,7 +43,7 @@ export function QuickAddDrug({ onCreated, onClose }: { onCreated: (drug: { drugI
           {(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
         </select></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Selling price"><input type="number" min={0} className="input" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: Number(e.target.value) })} /></Field>
+          <Field label="Selling price"><NumInput min={0} value={form.sellingPrice} onChange={(n) => setForm({ ...form, sellingPrice: n })} /></Field>
           <Field label="Expiry date"><input type="date" className="input" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} /></Field>
         </div>
         <div className="flex justify-end gap-2">

@@ -101,3 +101,22 @@ select.input {
 .swal2-cancel { border-radius: 0.75rem !important; font-weight: 600 !important; }
 .swal2-deny, .swal2-confirm:focus, .swal2-cancel:focus { box-shadow: 0 0 0 3px rgba(13, 157, 108, 0.25) !important; }
 div:where(.swal2-container) button:where(.swal2-toast-close-button) { color: #0b845c !important; }
+
+/* ---------- Receipt slip in-page print (fluid width: 80mm thermal or A4) ---------- */
+#slip-print-root { display: none; }
+#slip-print-root .slip { width: 100%; color: #000; font-family: 'Courier New', monospace; font-size: 14px; }
+#slip-print-root .c { text-align: center; }
+#slip-print-root .r { display: flex; justify-content: space-between; }
+#slip-print-root .b { font-weight: bold; }
+#slip-print-root .shop { font-size: 18px; font-weight: bold; }
+#slip-print-root .sep { border-top: 1px dashed #000; margin: 8px 0; }
+#slip-print-root .item { margin: 4px 0; }
+#slip-print-root .iname { font-weight: bold; overflow-wrap: break-word; }
+#slip-print-root .irow { display: flex; justify-content: space-between; }
+#slip-print-root .tot { margin-top: 2px; }
+#slip-print-root .foot { margin-top: 10px; text-align: center; font-size: 12px; }
+@media print {
+  body > *:not(#slip-print-root) { display: none !important; }
+  #slip-print-root { display: block !important; }
+}
+@page { size: auto; margin: 8mm; }
