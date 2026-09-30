@@ -3,7 +3,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import Swal from 'sweetalert2';
 import { purchasesApi } from '../api/resources';
-import type { Purchase, PurchaseItem } from '../api/types';
+import type { Drug, Purchase, PurchaseItem } from '../api/types';
 import { useDrugs, usePurchases, useSuppliers, useUnits, useUsers } from '../hooks/queries';
 import { useAuth } from '../store/auth';
 import { Card, Spinner, Empty } from '../components/ui';
@@ -75,6 +75,8 @@ export default function PurchasesPage() {
   const [invoice, setInvoice] = useState('');
   const [items, setItems] = useState<PurchaseItem[]>([]);
   const [row, setRow] = useState({ drugId: 0, unitId: 0, quantity: 1, unitPrice: 0, expiryDate: '' as string });
+  const [drugPickerOpen, setDrugPickerOpen] = useState(false);
+  const [drugQuery, setDrugQuery] = useState('');
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ drugId: 0, unitId: 0, quantity: 1, unitPrice: 0, expiryDate: '' as string });
 
@@ -84,6 +86,24 @@ export default function PurchasesPage() {
   const pickDrug = (drugId: number) => {
     const d = drugs.data?.find((x) => x.drugId === drugId);
     setRow({ ...row, drugId, unitPrice: d?.sellingPrice ?? 0, unitId: d?.baseUnitId ?? row.unitId, expiryDate: '' });
+  };
+
+  const selDrug = drugs.data?.find((x) => x.drugId === row.drugId);
+  const unitCode = (id: number) => units.data?.find((u) => u.unitId === id)?.unitCode ?? `#${id}`;
+  // Searchable drug picker (same style as Sales): results appear only while typing
+  const drugResults = useMemo(() => {
+    const q = drugQuery.trim().toLowerCase();
+    if (!q) return [];
+    return (drugs.data ?? []).filter((d: Drug) =>
+      d.drugName.toLowerCase().includes(q) ||
+      (d.genericName ?? '').toLowerCase().includes(q) ||
+      (d.category ?? '').toLowerCase().includes(q),
+    );
+  }, [drugs.data, drugQuery]);
+  const chooseDrug = (drugId: number) => {
+    pickDrug(drugId);
+    setDrugPickerOpen(false);
+    setDrugQuery('');
   };
 
   const addLine = () => {
@@ -128,6 +148,15 @@ export default function PurchasesPage() {
     setItems(items.filter((_, idx) => idx !== i));
     if (editIndex === i) cancelEdit();
     else if (editIndex != null && i < editIndex) setEditIndex(editIndex - 1);
+  };
+
+  // +/- stepper for lines (stock-IN, so no stock cap — minus at 1 removes the line)
+  const stepLine = (i: number, delta: number) => {
+    const it = items[i];
+    if (!it) return;
+    const next = Number(it.quantity) + delta;
+    if (next < 1) { removeLine(i); return; }
+    setItems(items.map((ln, idx) => (idx === i ? { ...ln, quantity: next } : ln)));
   };
 
   const create = useMutation({
@@ -248,8 +277,9 @@ export default function PurchasesPage() {
       </Card>
 
       {open && (
-        <Modal title="New purchase (stock updates automatically, FEFO batches created)" size="2xl" onClose={() => setOpen(false)}>
-          <div className="grid gap-3">
+        <Modal title="New purchase (stock updates automatically, FEFO batches created)" size="full" onClose={() => setOpen(false)}>
+          <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="grid gap-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Supplier"><select className="input" value={supplierId} onChange={(e) => setSupplierId(e.target.value === '' ? '' : Number(e.target.value))}>
                 <option value="">No supplier</option>{(suppliers.data ?? []).map((s) => <option key={s.supplierId} value={s.supplierId}>{s.supplierName}</option>)}
@@ -259,16 +289,24 @@ export default function PurchasesPage() {
                 <button className="btn-ghost shrink-0 px-2" type="button" title="Regenerate invoice number" onClick={() => setInvoice(genInvoice((data ?? []).map((p) => p.invoiceNumber)))}>↻</button>
               </div></Field>
             </div>
-            <div className="rounded-xl bg-slate-50 p-3">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                <Field label="Drug *">
-                  <div className="flex gap-1">
-                    <select className="input" value={row.drugId} onChange={(e) => pickDrug(Number(e.target.value))}>
-                      <option value={0}>Select drug</option>{(drugs.data ?? []).map((d) => <option key={d.drugId} value={d.drugId}>{d.drugName} (Stock: {d.stockQuantity})</option>)}
-                    </select>
-                    <button className="btn-ghost shrink-0 px-2" title="Drug not in list? Add it" onClick={() => setQuickDrug(true)}>+</button>
-                  </div>
-                </Field>
+            <div className="grid gap-2 rounded-xl bg-slate-50 p-3">
+              <div className="block text-sm">
+                <span className="mb-1 block font-semibold text-clinic-ink">Drug *</span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setDrugPickerOpen(true)}
+                    className={`input flex-1 text-left ${row.drugId ? '' : 'text-slate-400'}`}
+                  >
+                    {selDrug ? selDrug.drugName : 'Click to search & select drug…'}
+                  </button>
+                  {row.drugId > 0 && (
+                    <button type="button" className="btn-ghost shrink-0 px-2" title="Clear selection" onClick={() => setRow({ ...row, drugId: 0 })}>✕</button>
+                  )}
+                  <button className="btn-ghost shrink-0 px-2" title="Drug not in list? Add it" onClick={() => setQuickDrug(true)}>+</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Field label="Unit *"><select className="input" value={row.unitId} onChange={(e) => setRow({ ...row, unitId: Number(e.target.value) })}>
                   <option value={0}>Select unit</option>{(units.data ?? []).map((u) => <option key={u.unitId} value={u.unitId}>{u.unitName} ({u.unitCode})</option>)}
                 </select></Field>
@@ -276,25 +314,84 @@ export default function PurchasesPage() {
                 <Field label="Buying price (MMK) *"><input type="number" min={0} className="input" placeholder="Cost per unit in MMK" value={row.unitPrice} onChange={(e) => setRow({ ...row, unitPrice: Number(e.target.value) })} /></Field>
                 <Field label="Expiry date *"><input type="date" className="input" value={row.expiryDate ?? ''} onChange={(e) => setRow({ ...row, expiryDate: e.target.value })} /></Field>
               </div>
-              <button className="btn-ghost mt-2 w-full" type="button" onClick={addLine}>+ Add line</button>
+              <button className="btn-ghost mt-2 w-full" type="button" onClick={addLine}>+ Add line →</button>
             </div>
-            {items.map((it, i) => (
-              <div key={i} className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${editIndex === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}>
-                <div className="min-w-0">
-                  <p className="truncate font-medium">#{i + 1} {it.drugName ?? `Drug #${it.drugId}`}</p>
-                  <p className="text-xs text-slate-500">{it.quantity}{it.unitCode ? ` ${it.unitCode}` : ''} × {it.unitPrice} MMK = <b className="text-slate-700">{(it.quantity * it.unitPrice).toFixed(0)} MMK</b>{it.expiryDate ? ` • Expires: ${new Date(it.expiryDate).toLocaleDateString()}` : ''}</p>
+            </div>
+            <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <p className="text-sm font-bold text-clinic-ink">Lines ({items.length})</p>
+              <div className="grid max-h-[70vh] gap-2 overflow-y-auto pr-1">
+              {!items.length && <p className="rounded-lg bg-white px-2 py-3 text-center text-xs text-slate-500">No lines yet — fill the form on the left and press “+ Add line”.</p>}
+              {items.map((it, i) => (
+              <div key={i} className={`rounded-xl border bg-white px-3 py-2 shadow-sm ${editIndex === i ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+                    {it.drugName ?? drugs.data?.find((d) => d.drugId === it.drugId)?.drugName ?? `Drug #${it.drugId}`}
+                  </p>
+                  <p className="shrink-0 text-sm font-bold text-emerald-700">{(Number(it.quantity) * Number(it.unitPrice)).toFixed(0)} MMK</p>
                 </div>
-                <div className="flex shrink-0 gap-2">
-                  <button className="text-blue-600 hover:underline" type="button" onClick={() => startEdit(i)}>edit</button>
-                  <button className="shrink-0 text-red-600 hover:underline" type="button" onClick={() => removeLine(i)}>remove</button>
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]">
+                  {it.expiryDate ? <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">Exp: {new Date(it.expiryDate).toLocaleDateString()}</span> : null}
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-base font-bold text-slate-600 hover:bg-slate-100" type="button" onClick={() => stepLine(i, -1)} title="Decrease quantity">−</button>
+                    <span className="min-w-16 rounded-lg bg-emerald-50 px-2 py-1 text-center text-sm font-bold text-emerald-800">{it.quantity} {it.unitCode}</span>
+                    <button className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-300 text-base font-bold text-slate-600 hover:bg-slate-100" type="button" onClick={() => stepLine(i, 1)} title="Increase quantity">+</button>
+                  </div>
+                  <span className="flex shrink-0 gap-2 text-xs">
+                    <button className="text-blue-600 hover:underline" type="button" onClick={() => startEdit(i)}>edit</button>
+                    <button className="shrink-0 text-red-600 hover:underline" type="button" onClick={() => removeLine(i)}>remove</button>
+                  </span>
                 </div>
               </div>))}
-            <p className="text-right text-sm font-bold">Total: {items.reduce((s, i) => s + i.quantity * i.unitPrice, 0).toFixed(0)} MMK</p>
-            {!items.length && <p className="text-right text-xs text-amber-600">Fill Drug + Unit + Qty + Price + Expiry, then click “+ Add line” — Save stays disabled until at least 1 line is added.</p>}
-            <div className="flex justify-end gap-2">
-              <button className="btn-ghost" type="button" onClick={() => setOpen(false)}>Cancel</button>
-              <button className="btn-primary" type="button" disabled={create.isPending} title={!items.length ? 'Add at least one line item first' : 'Save purchase'} onClick={handleSave}>{create.isPending ? 'Saving…' : 'Save purchase'}</button>
+              </div>
+              <p className="text-right text-sm font-bold">Total: {items.reduce((s, i) => s + i.quantity * i.unitPrice, 0).toFixed(0)} MMK</p>
+              {!items.length && <p className="text-right text-xs text-amber-600">Fill Drug + Unit + Qty + Price + Expiry, then click “+ Add line” — Save stays disabled until at least 1 line is added.</p>}
+              <div className="flex justify-end gap-2">
+                <button className="btn-ghost" type="button" onClick={() => setOpen(false)}>Cancel</button>
+                <button className="btn-primary" type="button" disabled={create.isPending} title={!items.length ? 'Add at least one line item first' : 'Save purchase'} onClick={handleSave}>{create.isPending ? 'Saving…' : 'Save purchase'}</button>
+              </div>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {drugPickerOpen && (
+        <Modal title="Select drug" size="lg" onClose={() => { setDrugPickerOpen(false); setDrugQuery(''); }}>
+          <div className="grid gap-3">
+            <input
+              autoFocus
+              className="input"
+              value={drugQuery}
+              onChange={(e) => setDrugQuery(e.target.value)}
+              placeholder="🔍 Search by drug name, generic name, or category…"
+            />
+            <div className="grid max-h-[50vh] gap-2 overflow-y-auto pr-1">
+              {!drugQuery.trim() && <p className="rounded-lg bg-slate-50 px-2 py-4 text-center text-xs text-slate-500">Type a drug name, generic name, or category above to search…</p>}
+              {!!drugQuery.trim() && !drugResults.length && <p className="rounded-lg bg-slate-50 px-2 py-4 text-center text-xs text-slate-500">No drugs match “{drugQuery}”.</p>}
+              {drugResults.map((d: Drug) => (
+                <button
+                  key={d.drugId}
+                  type="button"
+                  onClick={() => chooseDrug(d.drugId)}
+                  className={`rounded-xl border px-3 py-2 text-left shadow-sm transition hover:border-emerald-400 hover:bg-emerald-50/50 ${d.drugId === row.drugId ? 'border-emerald-400 bg-emerald-50/60' : 'border-slate-200 bg-white'}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-sm font-semibold text-slate-800">{d.drugName}</p>
+                    <p className="shrink-0 text-sm font-bold text-emerald-700">{Number(d.sellingPrice).toFixed(0)} MMK</p>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
+                    {d.genericName ? <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">{d.genericName}</span> : null}
+                    {d.category ? <span className="rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700">{d.category}</span> : null}
+                    <span className={`rounded-full px-2 py-0.5 font-medium ${d.stockQuantity > 0 ? 'bg-slate-100 text-slate-600' : 'bg-red-50 text-red-600'}`}>
+                      Stock: {d.stockQuantity} {unitCode(d.baseUnitId)}
+                    </span>
+                    {d.expiryDate ? <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">Exp: {new Date(d.expiryDate).toLocaleDateString()}</span> : null}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {!!drugQuery.trim() && <p className="text-right text-xs text-slate-400">{drugResults.length} drug(s)</p>}
           </div>
         </Modal>
       )}

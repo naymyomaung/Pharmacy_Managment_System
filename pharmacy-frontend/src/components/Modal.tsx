@@ -11,11 +11,12 @@ export function Modal({ title, onClose, children, size }: {
   }, [onClose]);
 
   const maxW = size === 'full' ? 'sm:max-w-[95vw]' : size === '2xl' ? 'sm:max-w-6xl' : size === 'xl' ? 'sm:max-w-4xl' : size === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-lg';
+  const maxH = size === 'full' ? 'max-h-[100dvh] min-h-[100dvh] sm:min-h-[96dvh]' : 'max-h-[90vh]';
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-clinic-ink/50 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`modal-panel max-h-[90vh] w-full overflow-y-auto rounded-t-3xl border border-clinic-line bg-white p-4 shadow-pop sm:rounded-3xl sm:p-6 ${maxW}`}
+        className={`modal-panel ${maxH} w-full overflow-y-auto rounded-t-3xl border border-clinic-line bg-white p-4 shadow-pop sm:rounded-3xl sm:p-6 ${maxW}`}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-base font-bold text-clinic-ink">
