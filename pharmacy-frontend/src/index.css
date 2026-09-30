@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Clinic base ---------- */
+body {
+  @apply bg-clinic-bg text-clinic-ink antialiased;
+  background-image:
+    radial-gradient(1200px 320px at 85% -80px, rgba(13, 157, 108, 0.1), transparent 60%),
+    radial-gradient(900px 260px at -10% -60px, rgba(14, 165, 183, 0.1), transparent 60%);
+  background-attachment: fixed;
+}
+
+::selection { @apply bg-brand-200 text-clinic-ink; }
+
+/* Slim clinic scrollbars */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { @apply rounded-full bg-brand-200 border-2 border-transparent bg-clip-padding; }
+*::-webkit-scrollbar-thumb:hover { @apply bg-brand-300 border-2 border-transparent bg-clip-padding; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Form controls ---------- */
+.input {
+  @apply w-full rounded-xl border border-clinic-line bg-white px-3 py-2 text-sm text-clinic-ink shadow-sm outline-none transition placeholder:text-slate-400;
+}
+.input:hover { @apply border-brand-300; }
+.input:focus { @apply border-brand-500 ring-2 ring-brand-100; }
+select.input {
+  @apply pr-8;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
+}
+.btn-primary {
+  @apply btn text-white shadow-card;
+  background: linear-gradient(135deg, #0d9d6c 0%, #0a7d68 60%, #0b6e7c 100%);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.07); box-shadow: 0 10px 24px -10px rgba(13, 157, 108, 0.55); }
+.btn-danger { @apply btn bg-rose-600 text-white hover:bg-rose-700 shadow-sm; }
+.btn-ghost { @apply btn border border-clinic-line bg-white text-clinic-ink hover:border-brand-300 hover:bg-brand-50 shadow-sm; }
+
+/* ---------- Cards & tables ---------- */
+.card { @apply rounded-2xl border border-clinic-line bg-white p-4 shadow-card sm:p-5; }
+.card-title { @apply text-base font-bold text-clinic-ink; }
+.card-title::after {
+  content: '';
+  display: block;
+  width: 2.25rem;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #0d9d6c, #0ea5b7);
+}
+
+.table { @apply w-full text-sm; }
+.table thead th {
+  @apply bg-brand-50 px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-brand-800;
+  white-space: nowrap;
+}
+.table thead th:first-child { border-top-left-radius: 0.75rem; }
+.table thead th:last-child { border-top-right-radius: 0.75rem; }
+.table tbody tr { @apply transition; }
+.table tbody tr:hover { @apply bg-brand-50/60; }
+.table td { @apply border-t border-clinic-line px-3 py-2; }
+.table tfoot td { @apply border-t-2 border-brand-200 bg-brand-50/50 font-bold; }
+
+/* ---------- Sidebar nav ---------- */
+.nav-section { @apply px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-[.14em] text-clinic-muted; }
+.nav-link {
+  @apply flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition;
+}
+.nav-link:hover { @apply bg-brand-50 text-brand-800; }
+.nav-link-active {
+  @apply text-white shadow-card;
+  background: linear-gradient(135deg, #0d9d6c, #0b7d74);
+}
+.nav-ico {
+  @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-base transition;
+}
+.nav-link-active .nav-ico { @apply bg-white/20 text-white; }
+.nav-link:not(.nav-link-active) .nav-ico { @apply text-brand-700; }
+
+/* ---------- Modal animation ---------- */
+@keyframes clinic-pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-panel { animation: clinic-pop 0.18s ease-out; }
+
+/* ---------- SweetAlert2 clinic skin ---------- */
+.swal2-popup { border-radius: 1.25rem !important; border: 1px solid #dcebe7 !important; }
+.swal2-title { color: #0f2e2a !important; font-weight: 700 !important; }
+.swal2-confirm {
+  background: linear-gradient(135deg, #0d9d6c, #0b7d74) !important;
+  border-radius: 0.75rem !important;
+  font-weight: 600 !important;
+  box-shadow: 0 8px 20px -8px rgba(13, 157, 108, 0.6) !important;
+}
+.swal2-cancel { border-radius: 0.75rem !important; font-weight: 600 !important; }
+.swal2-deny, .swal2-confirm:focus, .swal2-cancel:focus { box-shadow: 0 0 0 3px rgba(13, 157, 108, 0.25) !important; }
+div:where(.swal2-container) button:where(.swal2-toast-close-button) { color: #0b845c !important; }
