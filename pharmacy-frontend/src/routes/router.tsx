@@ -15,6 +15,7 @@ import SalesHistoryPage from '../pages/SalesHistoryPage';
 import SalesReportPage from '../pages/reports/SalesReportPage';
 import PurchasesReportPage from '../pages/reports/PurchasesReportPage';
 import ClosingReportPage from '../pages/reports/ClosingReportPage';
+import NearExpiryReportPage from '../pages/reports/NearExpiryReportPage';
 
 function Guard({ children }: { children: ReactNode }) {
   const user = useAuth((s) => s.user);
@@ -38,6 +39,7 @@ export default function Router() {
         <Route path="/reports/sales" element={<Guard><SalesReportPage /></Guard>} />
         <Route path="/reports/purchases" element={<Guard><PurchasesReportPage /></Guard>} />
         <Route path="/reports/closing" element={<Guard><ClosingReportPage /></Guard>} />
+        <Route path="/reports/near-expiry" element={<Guard><NearExpiryReportPage /></Guard>} />
       </Routes>
     </BrowserRouter>
   );

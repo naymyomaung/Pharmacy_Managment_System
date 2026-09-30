@@ -35,6 +35,7 @@ const reportLinks: NavItem[] = [
   { to: '/reports/sales', label: 'Sale Report', icon: '📈' },
   { to: '/reports/purchases', label: 'Purchase Report', icon: '📉' },
   { to: '/reports/closing', label: 'Drug Closing', icon: '📋' },
+  { to: '/reports/near-expiry', label: 'Near Expiry', icon: '⏳' },
 ];
 
 function Item({ l }: { l: NavItem }) {
