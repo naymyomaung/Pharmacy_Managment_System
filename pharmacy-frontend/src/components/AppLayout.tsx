@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import { useUi } from '../store/ui';
 
@@ -53,7 +53,7 @@ function Item({ l }: { l: NavItem }) {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { sidebarOpen, toggleSidebar } = useUi();
+  const { sidebarOpen, toggleSidebar, desktopCollapsed, toggleDesktopCollapsed } = useUi();
   const nav = useNavigate();
   const loc = useLocation();
   const reportsActive = loc.pathname.startsWith('/reports');
@@ -64,7 +64,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     window.addEventListener('resize', f);
     return () => window.removeEventListener('resize', f);
   }, []);
-  const showSidebar = isDesktop || sidebarOpen;
+  const showSidebar = isDesktop ? !desktopCollapsed : sidebarOpen;
   const initial = (user?.fullName ?? user?.username ?? '?').trim().charAt(0).toUpperCase();
 
   const pageTitle = [...groups.flatMap((g) => g.items), ...reportLinks]
@@ -77,7 +77,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-clinic-line bg-white/85 backdrop-blur">
         <div className="h-1 bg-gradient-to-r from-brand-500 via-brand-400 to-clinic-accent" />
         <div className="flex items-center gap-3 px-4 py-2.5">
-          <button className="btn-ghost !rounded-lg !px-2.5 !py-1.5 lg:hidden" onClick={toggleSidebar}>☰</button>
+          <button
+            className="btn-ghost !rounded-lg !px-2.5 !py-1.5"
+            onClick={() => (isDesktop ? toggleDesktopCollapsed() : toggleSidebar())}
+            title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+          >{showSidebar ? '✕' : '☰'}</button>
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-clinic-ink">{pageTitle}</p>
             <p className="hidden text-[11px] text-clinic-muted sm:block">Clinic Pharmacy Management</p>
@@ -100,15 +104,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="flex">
         {showSidebar && (
           <aside className="fixed z-10 h-[calc(100vh-65px)] w-64 overflow-y-auto border-r border-clinic-line bg-white p-3 lg:sticky lg:top-[65px]">
-            {/* Brand */}
-            <Link to="/" className="mb-2 flex items-center gap-2.5 rounded-2xl bg-gradient-to-br from-brand-600 via-brand-600 to-clinic-accent p-3 text-white shadow-card">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 text-2xl">✚</span>
-              <span className="leading-tight">
-                <span className="block font-bold">MediCare Pharmacy</span>
-                <span className="block text-[11px] text-white/80">Clinic Management Suite</span>
-              </span>
-            </Link>
-
             <nav className="flex flex-col">
               {groups.map((g) => (
                 <div key={g.title}>
@@ -134,12 +129,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 </div>
               )}
             </nav>
-
-            {/* Care note */}
-            <div className="mt-4 rounded-2xl bg-brand-50 p-3 text-xs leading-relaxed text-brand-800">
-              <p className="font-bold">💚 Care reminder</p>
-              <p className="text-brand-800/80">Check expiry dates weekly and keep FEFO batches tidy.</p>
-            </div>
           </aside>
         )}
         <main className="min-w-0 flex-1 p-4 lg:p-6">{children}</main>
